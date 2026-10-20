@@ -1,0 +1,11 @@
+{
+  "projectId": "voidmc-site",
+  "appId": "PASTE_WEB_APP_ID",
+  "apiKey": "PASTE_REAL_WEB_API_KEY",
+  "authDomain": "voidmc-site.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "voidmc-site.firebasestorage.app",
+  "messagingSenderId": "PASTE_SENDER_ID",
+  "measurementId": "",
+  "recaptchaSiteKey": ""
+}
