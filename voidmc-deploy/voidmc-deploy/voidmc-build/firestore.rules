@@ -1,0 +1,196 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global safety net — default deny everything the blocks below do not allow.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // The console allowlist. The same address is enforced in worker.ts (ADMIN_EMAILS), and the
+    // browser bundle only ever carries a SHA-256 digest of it (src/lib/adminGate.ts) — so this
+    // file plus the Worker are where an email is actually written.
+    //
+    // To add a staff member: create their Firebase Auth account, add their email here AND to
+    // ADMIN_EMAILS in worker.ts, hash the email and list the digest in adminGate.ts, then
+    // re-deploy the Worker and re-publish these rules.
+    function isConsoleAdmin() {
+      return isSignedIn() && request.auth.token.email == 'routsantosh650@gmail.com';
+    }
+
+    function isText(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    function isShortText(v, max) {
+      return v is string && v.size() >= 1 && v.size() <= max;
+    }
+
+    function isTags(v, max) {
+      return v is list && v.size() <= max && v.all(x, x is string && x.size() <= 40);
+    }
+
+    function isSort(v) {
+      return v is int && v >= 0 && v <= 9999;
+    }
+
+    function isFlag(v) {
+      return v is bool;
+    }
+
+    function isColour(v) {
+      return v is string && v.matches('^#[0-9a-fA-F]{6}$');
+    }
+
+    // 3. Per-collection validators. The key lists must match what the console writes in
+    //    src/components/AdminConsole.tsx — an unexpected key makes the whole save fail, which is
+    //    the point: nobody can smuggle arbitrary fields into public content.
+    function validSiteConfig(d) {
+      return d.keys().hasAll([
+        'brandName', 'tagline', 'heroLine', 'serverIp', 'bedrockPort', 'javaVersion',
+        'discordUrl', 'youtubeUrl', 'announcement', 'playerCap', 'statusNote', 'updatedAt'
+      ]) && d.keys().hasOnly([
+        'brandName', 'tagline', 'heroLine', 'serverIp', 'bedrockPort', 'javaVersion',
+        'discordUrl', 'youtubeUrl', 'announcement', 'playerCap', 'statusNote', 'updatedAt'
+      ]) &&
+      isShortText(d.brandName, 40) && isText(d.tagline, 60) && isText(d.heroLine, 400) &&
+      isText(d.serverIp, 80) && isText(d.bedrockPort, 12) && isText(d.javaVersion, 20) &&
+      isText(d.discordUrl, 200) && isText(d.youtubeUrl, 200) && isText(d.announcement, 240) &&
+      isText(d.playerCap, 10) && isText(d.statusNote, 120);
+    }
+
+    function validMode(d) {
+      return d.keys().hasAll(['title', 'tagline', 'summary', 'players', 'tags', 'accent', 'sortOrder', 'active', 'updatedAt']) &&
+      d.keys().hasOnly(['title', 'tagline', 'summary', 'players', 'tags', 'accent', 'sortOrder', 'active', 'updatedAt']) &&
+      isShortText(d.title, 40) && isText(d.tagline, 60) && isText(d.summary, 420) &&
+      isText(d.players, 28) && isTags(d.tags, 12) && isColour(d.accent) &&
+      isSort(d.sortOrder) && isFlag(d.active);
+    }
+
+    function validEvent(d) {
+      return d.keys().hasAll(['title', 'kind', 'summary', 'startsAt', 'reward', 'sortOrder', 'active', 'updatedAt']) &&
+      d.keys().hasOnly(['title', 'kind', 'summary', 'startsAt', 'reward', 'sortOrder', 'active', 'updatedAt']) &&
+      isShortText(d.title, 60) && isText(d.kind, 20) && isText(d.summary, 420) &&
+      isText(d.startsAt, 32) && isText(d.reward, 60) && isSort(d.sortOrder) && isFlag(d.active);
+    }
+
+    function validBuild(d) {
+      return d.keys().hasAll(['title', 'author', 'category', 'summary', 'tags', 'year', 'featured', 'sortOrder', 'active', 'updatedAt']) &&
+      d.keys().hasOnly(['title', 'author', 'category', 'summary', 'tags', 'year', 'featured', 'sortOrder', 'active', 'updatedAt']) &&
+      isShortText(d.title, 60) && isText(d.author, 40) &&
+      d.category in ['spawn', 'community', 'nether', 'end', 'farm'] &&
+      isText(d.summary, 420) && isTags(d.tags, 12) && d.year is int &&
+      d.year >= 2000 && d.year <= 2100 && isFlag(d.featured) && isSort(d.sortOrder) && isFlag(d.active);
+    }
+
+    function validRule(d) {
+      return d.keys().hasAll(['title', 'text', 'severity', 'sortOrder', 'active', 'updatedAt']) &&
+      d.keys().hasOnly(['title', 'text', 'severity', 'sortOrder', 'active', 'updatedAt']) &&
+      isShortText(d.title, 70) && isText(d.text, 420) && d.severity in ['hard', 'warn'] &&
+      isSort(d.sortOrder) && isFlag(d.active);
+    }
+
+    function validStaff(d) {
+      return d.keys().hasAll(['name', 'role', 'since', 'bio', 'perms', 'sortOrder', 'active', 'updatedAt']) &&
+      d.keys().hasOnly(['name', 'role', 'since', 'bio', 'perms', 'sortOrder', 'active', 'updatedAt']) &&
+      isShortText(d.name, 30) && isText(d.role, 30) && isText(d.since, 20) &&
+      isText(d.bio, 200) && isTags(d.perms, 12) && isSort(d.sortOrder) && isFlag(d.active);
+    }
+
+    function validFaq(d) {
+      return d.keys().hasAll(['q', 'a', 'sortOrder', 'active', 'updatedAt']) &&
+      d.keys().hasOnly(['q', 'a', 'sortOrder', 'active', 'updatedAt']) &&
+      isShortText(d.q, 120) && isText(d.a, 600) && isSort(d.sortOrder) && isFlag(d.active);
+    }
+
+    // The audit row the browser writes (src/lib/audit.ts). createdAt is a server timestamp, so the
+    // log cannot be back-dated from a client clock.
+    function validAudit(d) {
+      return d.keys().hasAll([
+        'createdAt', 'clientTime', 'actor', 'actorUid', 'category', 'action', 'target',
+        'summary', 'changes', 'page', 'agent', 'ip'
+      ]) && d.keys().hasOnly([
+        'createdAt', 'clientTime', 'actor', 'actorUid', 'category', 'action', 'target',
+        'summary', 'changes', 'page', 'agent', 'ip'
+      ]) &&
+      d.category in ['ADMIN', 'CUSTOMER', 'AUTH'] &&
+      isText(d.actor, 200) && isText(d.actorUid, 128) && isText(d.action, 40) &&
+      isText(d.target, 200) && isText(d.summary, 300) && isText(d.clientTime, 40) &&
+      isText(d.page, 200) && isText(d.agent, 80) && isText(d.ip, 60) &&
+      d.changes is list && d.changes.size() <= 25 && d.changes.all(c, c is string && c.size() <= 240);
+    }
+
+    // 4. Public content — anyone may read it, only the console may write it.
+    //    Reads are unauthenticated on purpose: these are the words on the website.
+    match /site/{docId} {
+      allow read: if true;
+      allow create, update: if isConsoleAdmin() && docId == 'config' && validSiteConfig(incoming());
+      allow delete: if false;
+    }
+
+    match /modes/{id} {
+      allow read: if true;
+      allow create, update: if isConsoleAdmin() && isValidId(id) && validMode(incoming());
+      allow delete: if isConsoleAdmin() && isValidId(id);
+    }
+
+    match /events/{id} {
+      allow read: if true;
+      allow create, update: if isConsoleAdmin() && isValidId(id) && validEvent(incoming());
+      allow delete: if isConsoleAdmin() && isValidId(id);
+    }
+
+    match /builds/{id} {
+      allow read: if true;
+      allow create, update: if isConsoleAdmin() && isValidId(id) && validBuild(incoming());
+      allow delete: if isConsoleAdmin() && isValidId(id);
+    }
+
+    match /rules/{id} {
+      allow read: if true;
+      allow create, update: if isConsoleAdmin() && isValidId(id) && validRule(incoming());
+      allow delete: if isConsoleAdmin() && isValidId(id);
+    }
+
+    match /staff/{id} {
+      allow read: if true;
+      allow create, update: if isConsoleAdmin() && isValidId(id) && validStaff(incoming());
+      allow delete: if isConsoleAdmin() && isValidId(id);
+    }
+
+    match /faq/{id} {
+      allow read: if true;
+      allow create, update: if isConsoleAdmin() && isValidId(id) && validFaq(incoming());
+      allow delete: if isConsoleAdmin() && isValidId(id);
+    }
+
+    // 5. Audit log — append-only. Not readable by the public, never editable once written.
+    match /auditLog/{id} {
+      allow read: if isConsoleAdmin();
+      allow create: if isConsoleAdmin() && validAudit(incoming());
+      allow update, delete: if false;
+    }
+
+    // 6. Connection probe used by src/firebase.ts so a wrong database id is visible in the console
+    //    log instead of looking like a broken site. It carries no data, and the probe runs before
+    //    anybody signs in — an anonymous get that is refused would log a permission error on every
+    //    visit and make a healthy site look broken.
+    match /test/{id} {
+      allow get: if true;
+      allow list, write: if false;
+    }
+  }
+}
